@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Life Timeline</title>
+  <link rel="stylesheet" href="https://unpkg.com/vis-timeline@7.7.3/styles/vis-timeline-graph2d.min.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <h1 id="timelineName">{{ timeline.name }}</h1>
+        <span id="timelineDesc" class="header-desc">{{ timeline.description or '' }}</span>
+      </div>
+
+      <!-- Tabs -->
+      <nav class="tab-bar">
+        <button class="tab-btn active" id="tab-timeline" onclick="setTab('timeline')">Timeline</button>
+        <button class="tab-btn" id="tab-achieved" onclick="setTab('achieved')">
+          ✓ Achieved <span class="tab-badge" id="achievedBadge" style="display:none">0</span>
+        </button>
+      </nav>
+
+      <!-- Zoom presets (timeline only) -->
+      <div class="zoom-presets" id="zoomPresets">
+        <button class="zoom-btn" onclick="zoomToMonths(1)">1M</button>
+        <button class="zoom-btn" onclick="zoomToMonths(3)">3M</button>
+        <button class="zoom-btn" onclick="zoomTo(1)">1Y</button>
+        <button class="zoom-btn" onclick="zoomTo(5)">5Y</button>
+        <button class="zoom-btn" onclick="zoomTo(10)">10Y</button>
+        <button class="zoom-btn" onclick="zoomToAll()">All</button>
+      </div>
+
+      <div class="header-actions">
+        <button class="btn-secondary" onclick="openSettings()">⚙ Settings</button>
+        <button class="btn-primary" onclick="openModal()">+ Add Goal</button>
+      </div>
+    </header>
+
+    <!-- Timeline view -->
+    <div id="timelineView" class="view-fill">
+      <div id="timeline"></div>
+    </div>
+
+    <!-- Bottom panel: calendar + notes (always visible, below timeline) -->
+    <div id="bottomPanel">
+
+      <!-- Monthly goal calendar -->
+      <section class="bp-section">
+        <div class="bp-section-header">
+          <h3 class="bp-title">Monthly Goals</h3>
+          <div class="cal-nav">
+            <button class="cal-nav-btn" onclick="calPrev()">‹</button>
+            <span id="calMonthLabel" class="cal-month-label"></span>
+            <button class="cal-nav-btn" onclick="calNext()">›</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </section>
+
+      <!-- Timeline journal -->
+      <section class="bp-section">
+        <h3 class="bp-title" style="margin-bottom:14px">Timeline Notes</h3>
+        <div class="note-composer">
+          <textarea id="noteInput" rows="3" placeholder="Add a note, decision, or update…"></textarea>
+          <button class="btn-primary note-submit" onclick="addNote()">Add Note</button>
+        </div>
+        <div id="notesList"></div>
+      </section>
+
+    </div>
+
+    <!-- Achieved view -->
+    <div id="achievedView" class="view-fill hidden">
+      <div class="achieved-header">
+        <div>
+          <h2 class="achieved-title">Achieved Goals</h2>
+          <span id="achievedCount" class="achieved-subtitle">0 goals</span>
+        </div>
+      </div>
+      <div class="achieved-scroll">
+        <div id="achievedEmpty" class="achieved-empty">
+          No achieved goals yet — mark a goal as <strong>Completed</strong> to see it here.
+        </div>
+        <table class="achieved-table" id="achievedTable" style="display:none">
+          <thead>
+            <tr>
+              <th>Goal</th>
+              <th>Category</th>
+              <th>Completed</th>
+              <th>Duration</th>
+              <th>Campaign Goal</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="achievedBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Goal Modal ──────────────────────────────────────────────────────── -->
+  <div id="milestoneModal" class="modal hidden">
+    <div class="modal-overlay" onclick="closeModal()"></div>
+    <div class="modal-box">
+      <h2 id="modalTitle">New Goal</h2>
+      <input type="hidden" id="milestoneId" />
+
+      <div class="form-row">
+        <label>Goal Type</label>
+        <div class="goal-type-toggle">
+          <button type="button" id="typeBtn-campaign" class="type-btn active" onclick="setGoalType('campaign')">⚑ Campaign Goal</button>
+          <button type="button" id="typeBtn-subgoal"  class="type-btn"        onclick="setGoalType('subgoal')">→ Sub-goal</button>
+        </div>
+      </div>
+      <div id="hint-campaign" class="goal-hint">A major life objective spanning multiple years. Appears as its own row on the timeline.</div>
+      <div id="hint-subgoal"  class="goal-hint hidden">A step toward a Campaign Goal. Sits inside the parent goal's row.</div>
+
+      <div class="form-row">
+        <label>Title *</label>
+        <input type="text" id="fTitle" placeholder="e.g. Build financial independence" />
+      </div>
+
+      <div class="form-row">
+        <label>Description</label>
+        <textarea id="fDesc" placeholder="What does achieving this look like?"></textarea>
+      </div>
+
+      <div class="form-row" id="horizonRow">
+        <label>Horizon</label>
+        <div class="horizon-selector">
+          <button type="button" class="horizon-btn"        data-years="1"  onclick="setHorizon(1)">1-Year</button>
+          <button type="button" class="horizon-btn active" data-years="5"  onclick="setHorizon(5)">5-Year</button>
+          <button type="button" class="horizon-btn"        data-years="10" onclick="setHorizon(10)">10-Year</button>
+          <button type="button" class="horizon-btn"        data-years="15" onclick="setHorizon(15)">15-Year</button>
+          <button type="button" class="horizon-btn"        data-years="0"  onclick="setHorizon(0)">Custom</button>
+        </div>
+        <div class="horizon-preview" id="horizonPreview"></div>
+      </div>
+
+      <div class="form-row form-row-2">
+        <div><label>Start Date *</label><input type="date" id="fStartDate" /></div>
+        <div><label id="endDateLabel">End Date (auto-filled)</label><input type="date" id="fEndDate" /></div>
+      </div>
+
+      <div class="form-row form-row-2">
+        <div>
+          <label>Status</label>
+          <select id="fStatus">
+            <option value="planned" selected>Planned</option>
+            <option value="in-progress">In Progress</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+        <div><label>Category</label><input type="text" id="fCategory" placeholder="career, health, finance…" /></div>
+      </div>
+
+      <div class="form-row">
+        <label>Color</label>
+        <div class="color-palette">
+          <button type="button" class="color-swatch" data-color="" title="Default"
+            onclick="setColor('')" style="background:var(--surface3);border:2px dashed var(--border2)"></button>
+          <button type="button" class="color-swatch" data-color="#0066ff" onclick="setColor('#0066ff')" style="background:#0066ff"></button>
+          <button type="button" class="color-swatch" data-color="#5e5ce6" onclick="setColor('#5e5ce6')" style="background:#5e5ce6"></button>
+          <button type="button" class="color-swatch" data-color="#ff9500" onclick="setColor('#ff9500')" style="background:#ff9500"></button>
+          <button type="button" class="color-swatch" data-color="#ff3b30" onclick="setColor('#ff3b30')" style="background:#ff3b30"></button>
+          <button type="button" class="color-swatch" data-color="#34c759" onclick="setColor('#34c759')" style="background:#34c759"></button>
+          <button type="button" class="color-swatch" data-color="#00c7be" onclick="setColor('#00c7be')" style="background:#00c7be"></button>
+          <button type="button" class="color-swatch" data-color="#ffd60a" onclick="setColor('#ffd60a')" style="background:#ffd60a"></button>
+          <button type="button" class="color-swatch" data-color="#ff6b9d" onclick="setColor('#ff6b9d')" style="background:#ff6b9d"></button>
+        </div>
+        <input type="hidden" id="fColor" />
+      </div>
+
+      <div class="form-row">
+        <label>Notes</label>
+        <textarea id="fNotes" rows="2" placeholder="Strategy, why this matters, resources needed…"></textarea>
+      </div>
+
+      <div id="parentRow" class="form-row" style="display:none">
+        <label>Campaign Goal (parent) *</label>
+        <select id="fParent"><option value="">— choose a campaign goal —</option></select>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-delete" id="btnDelete" onclick="deleteCurrentMilestone()" style="display:none">Delete</button>
+        <div class="modal-actions-right">
+          <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+          <button class="btn-save"   onclick="saveModal()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Settings Modal ─────────────────────────────────────────────────── -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-overlay" onclick="closeSettings()"></div>
+    <div class="modal-box">
+      <h2>Timeline Settings</h2>
+      <div class="form-row"><label>Name</label><input type="text" id="sName" /></div>
+      <div class="form-row"><label>Description</label><input type="text" id="sDesc" /></div>
+      <div class="form-row form-row-2">
+        <div><label>Start Year</label><input type="number" id="sStartYear" min="1900" max="2200" /></div>
+        <div><label>End Year</label><input type="number" id="sEndYear" min="1900" max="2200" /></div>
+      </div>
+      <div class="modal-actions">
+        <div></div>
+        <div class="modal-actions-right">
+          <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
+          <button class="btn-save"   onclick="saveSettings()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Day Details Modal ──────────────────────────────────────────────── -->
+  <div id="dayModal" class="modal hidden" data-iso="">
+    <div class="modal-overlay" onclick="closeDayModal()"></div>
+    <div class="modal-box modal-box-sm">
+      <h2 id="dayModalDate"></h2>
+      <div id="dayModalList" class="day-modal-list"></div>
+      <div class="modal-actions">
+        <div></div>
+        <div class="modal-actions-right">
+          <button class="btn-cancel" onclick="closeDayModal()">Close</button>
+          <button class="btn-primary" onclick="closeDayModal(); openModal(null, document.getElementById('dayModal').dataset.iso)">+ Add Goal</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/vis-timeline@7.7.3/standalone/umd/vis-timeline-graph2d.min.js"></script>
+  <script>
+    // ── State ──────────────────────────────────────────────────────────────
+    const state = {
+      timelineId: null, milestones: [], notes: [],
+      startYear: null, endYear: null,
+      timelineName: '', timelineDesc: ''
+    };
+    let visTimeline = null, visGroups = null, visItems = null;
+    const calState = { year: new Date().getFullYear(), month: new Date().getMonth() };
+    const MS_YEAR = 1000 * 60 * 60 * 24 * 365.25;
+
+    // Drag feedback state
+    let _dragOrigin  = null;  // {start, end} from state at first onMoving call
+    let _dragItemId  = null;  // tracks which item is being dragged
+    let _dragHUD     = null;  // floating HUD element (created lazily)
+    let _lastMouseX  = 0, _lastMouseY = 0;
+    document.addEventListener('mousemove', e => { _lastMouseX = e.clientX; _lastMouseY = e.clientY; });
+
+    // Move-mode state (double-click to unlock, single-click/drop to lock)
+    let _moveItemId   = null; // item currently unlocked for drag
+    let _moveItemSnap = null; // original position snapshot for revert on Escape
+    let _justDropped  = false; // prevents click handler firing immediately after drag-end
+    let _clickTimer   = null;  // discriminates single-click from double-click
+
+    // ── Tiny Helpers ───────────────────────────────────────────────────────
+
+    function toDateStr(d) {
+      if (!d) return null;
+      const dt = d instanceof Date ? d : new Date(d);
+      return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    }
+
+    function toVisDate(isoStr, year) {
+      if (isoStr) return new Date(isoStr + 'T12:00:00');
+      return new Date(year, 0, 1);
+    }
+
+    function isParent(m) {
+      return state.milestones.some(x => x.parent_id === m.id);
+    }
+
+    function bigGoals() {
+      return state.milestones.filter(m => !m.parent_id)
+        .sort((a, b) => a.target_year - b.target_year || a.id - b.id);
+    }
+
+    function goalEndDate(m) {
+      if (m.end_date) return toVisDate(m.end_date, null);
+      return new Date(toVisDate(m.target_date, m.target_year).getTime() + 5 * MS_YEAR);
+    }
+
+    function itemColor(m) {
+      if (m.color) return m.color;
+      return { high: '#ff3b30', medium: '#0066ff', low: '#34c759' }[m.priority] || '#0066ff';
+    }
+
+    function isLight(hex) {
+      if (!hex || hex.length < 7) return false;
+      const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+      return (r*299 + g*587 + b*114) / 1000 > 155;
+    }
+
+    function buildTooltip(m) {
+      // Tiny helper: formats a date ISO string as "Mar 17, 2026"
+      const fmtD = iso => iso
+        ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+        : null;
+      const startStr = fmtD(m.target_date) || String(m.target_year);
+      const endStr   = m.end_date ? ` → ${fmtD(m.end_date)}` : '';
+      return [
+        `<strong>${m.title}</strong>`,
+        m.description || null,
+        `${startStr}${endStr}`,
+        `Status: ${m.status}`,
+        m.category && m.category !== 'general' ? `Category: ${m.category}` : null,
+        m.notes ? `Notes: ${m.notes.slice(0,80)}${m.notes.length>80?'…':''}` : null
+      ].filter(Boolean).join('<br>');
+    }
+
+    function formatDisplayDate(isoStr) {
+      // Tiny helper: "2026-03-01" → "Mar 2026"
+      if (!isoStr) return '—';
+      return new Date(isoStr + 'T12:00:00').toLocaleDateString('en-US', { month:'short', year:'numeric' });
+    }
+
+    function calcDuration(startIso, endIso) {
+      // Tiny helper: human-readable span between two dates
+      const ms = new Date(endIso+'T12:00:00') - new Date(startIso+'T12:00:00');
+      if (ms <= 0) return '—';
+      const yrs = Math.floor(ms / MS_YEAR);
+      const mos = Math.floor((ms % MS_YEAR) / (MS_YEAR/12));
+      if (yrs > 0) return mos > 0 ? `${yrs}y ${mos}m` : `${yrs}y`;
+      return mos > 0 ? `${mos} mo` : '< 1 mo';
+    }
+
+    // ── Groups — one row per campaign goal, no shared Campaign row ─────────
+
+    function buildGroups() {
+      const groups = [];
+      bigGoals().forEach((m, i) => {
+        const c       = itemColor(m);
+        const endYear = m.end_date ? m.end_date.slice(0,4) : String(m.target_year + 5);
+        groups.push({
+          id:      `p${m.id}`,
+          content: `<span class="gl-lane">
+                      <span class="gl-dot" style="background:${c}"></span>
+                      <span class="gl-title">${m.title}</span>
+                      <span class="gl-span">${m.target_year}–${endYear}</span>
+                    </span>`,
+          title:   m.description || '',
+          order:   i
+        });
+      });
+      // Fallback row for orphaned sub-goals
+      groups.push({ id:'general', content:`<span class="gl-lane"><span class="gl-title gl-dim">General</span></span>`, order:9999 });
+      console.log('[buildGroups] Built', groups.length, 'groups');
+      return groups;
+    }
+
+    // ── Items — big goals + sub-goals share the same row, stack prevents overlap
+
+    function buildItems() {
+      const items = [];
+      state.milestones.forEach(m => {
+        const start = toVisDate(m.target_date, m.target_year);
+        const c     = itemColor(m);
+        if (!m.parent_id) {
+          // Campaign goal: range bar at top of its own row
+          items.push({
+            id:       m.id,
+            content:  `<span class="big-goal-label">${m.title}</span>`,
+            start,
+            end:      goalEndDate(m),
+            group:    `p${m.id}`,
+            type:     'range',
+            className:`big-goal status-${m.status}`,
+            style:    `background:${c};border-color:${c};color:#fff`,
+            title:    buildTooltip(m),
+            editable: { updateTime:true, updateGroup:false, remove:false }
+          });
+        } else {
+          // Sub-goal: stacked below the campaign bar in the same row
+          const end       = m.end_date ? toVisDate(m.end_date, null) : null;
+          const hasEnd    = !!(end && end > start);
+          const MIN_SPAN  = 14 * 86400000; // 14-day visual minimum for point goals
+          items.push({
+            id:       m.id,
+            content:  m.title,
+            start,
+            end:      hasEnd ? end : new Date(start.getTime() + MIN_SPAN),
+            type:     'range',
+            group:    `p${m.parent_id}`,
+            className:`subgoal status-${m.status}${hasEnd ? '' : ' goal-point'}`,
+            style:    `background:${c};border-color:${c};color:${isLight(c)?'#000':'#fff'}`,
+            title:    buildTooltip(m),
+            editable: { updateTime:true, updateGroup:true, remove:false }
+          });
+        }
+      });
+      console.log('[buildItems] Built', items.length, 'items');
+      return items;
+    }
+
+    // ── Render — incremental diff, never clears (no flash) ─────────────────
+
+    function render() {
+      if (!visTimeline) return;
+      const ng = buildGroups(), ni = buildItems();
+      const eg = new Set(visGroups.getIds()), ng_ = new Set(ng.map(g=>g.id));
+      ng.forEach(g => eg.has(g.id) ? visGroups.update(g) : visGroups.add(g));
+      eg.forEach(id => { if (!ng_.has(id)) visGroups.remove(id); });
+      const ei = new Set(visItems.getIds()), ni_ = new Set(ni.map(i=>i.id));
+      ni.forEach(i => ei.has(i.id) ? visItems.update(i) : visItems.add(i));
+      ei.forEach(id => { if (!ni_.has(id)) visItems.remove(id); });
+      updateAchievedBadge();
+    }
+
+    function _syncGroupLabels() {
+      // Tiny helper: only refresh group sidebar labels without touching items
+      const groups = buildGroups();
+      const cur = new Set(groups.map(g => g.id));
+      groups.forEach(g => visGroups.get(g.id) ? visGroups.update(g) : visGroups.add(g));
+      visGroups.getIds().forEach(id => { if (!cur.has(id)) visGroups.remove(id); });
+    }
+
+    // ── Zoom ───────────────────────────────────────────────────────────────
+
+    function zoomToMonths(months) {
+      if (!visTimeline) return;
+      const now = new Date();
+      visTimeline.setWindow(
+        new Date(now.getTime() - 7 * 86400000),
+        new Date(now.getTime() + months * 30.44 * 86400000),
+        { animation: { duration:350, easingFunction:'easeInOutQuad' } }
+      );
+      setTimeout(_updateAxisGranularity, 400);
+    }
+
+    function zoomTo(years) {
+      if (!visTimeline) return;
+      const now = new Date();
+      visTimeline.setWindow(
+        new Date(now.getTime() - MS_YEAR * 0.25),
+        new Date(now.getTime() + MS_YEAR * years),
+        { animation: { duration:350, easingFunction:'easeInOutQuad' } }
+      );
+      setTimeout(_updateAxisGranularity, 400);
+    }
+
+    function zoomToAll() {
+      if (!visTimeline) return;
+      visTimeline.setWindow(
+        new Date(state.startYear, 0, 1),
+        new Date(state.endYear, 11, 31),
+        { animation: { duration:350, easingFunction:'easeInOutQuad' } }
+      );
+      setTimeout(_updateAxisGranularity, 400);
+    }
+
+    // ── Cursor date line ────────────────────────────────────────────────────
+
+    function initCursorLine() {
+      // Tiny helper: shows a vertical date-reference line that follows the cursor
+      const container = document.getElementById('timeline');
+      const line  = document.createElement('div');
+      const label = document.createElement('div');
+      line.className  = 'cursor-line';
+      label.className = 'cursor-label';
+      line.appendChild(label);
+      line.style.display = 'none';
+      container.appendChild(line);
+
+      container.addEventListener('mousemove', e => {
+        const sidebar = container.querySelector('.vis-labelset');
+        const sidebarW = sidebar ? sidebar.offsetWidth : 0;
+        const rect = container.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        if (x <= sidebarW) { line.style.display = 'none'; return; }
+        const props = visTimeline.getEventProperties(e);
+        if (!props.time) { line.style.display = 'none'; return; }
+        line.style.display = 'block';
+        line.style.left    = x + 'px';
+        label.textContent  = props.time.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+      });
+      container.addEventListener('mouseleave', () => { line.style.display = 'none'; });
+      console.log('[initCursorLine] Initialized');
+    }
+
+    // ── Adaptive axis granularity ───────────────────────────────────────────
+
+    function _updateAxisGranularity() {
+      // Tiny helper: sets minor-axis scale based on current visible window span
+      if (!visTimeline) return;
+      const w = visTimeline.getWindow();
+      const spanDays = (w.end - w.start) / 86400000;
+      let scale, step;
+      if      (spanDays <= 35)   { scale = 'day';   step = 1; }  // ≤5wk   → daily ticks
+      else if (spanDays <= 100)  { scale = 'day';   step = 3; }  // ≤3mo   → every 3 days
+      else if (spanDays <= 365)  { scale = 'week';  step = 1; }  // ≤1yr   → weekly ticks
+      else if (spanDays <= 730)  { scale = 'month'; step = 1; }  // ≤2yr   → monthly ticks
+      else if (spanDays <= 2190) { scale = 'month'; step = 3; }  // ≤6yr   → quarterly ticks
+      else if (spanDays <= 7300) { scale = 'year';  step = 1; }  // ≤20yr  → yearly ticks
+      else                       { scale = 'year';  step = 5; }  // 20yr+  → 5-year ticks
+      visTimeline.setOptions({ timeAxis: { scale, step } });
+      console.log(`[_updateAxisGranularity] ${Math.round(spanDays)}d → ${scale}/${step}`);
+    }
+
+    // ── Drag / resize HUD ─────────────────────────────────────────────────
+
+    function _createDragHUD() {
+      // Tiny helper: lazily creates the floating drag feedback overlay
+      const el = document.createElement('div');
+      el.id = 'dragHUD';
+      el.className = 'drag-hud';
+      el.style.display = 'none';
+      document.body.appendChild(el);
+      console.log('[_createDragHUD] Created HUD element');
+      return el;
+    }
+
+    function _fmtDelta(origDate, currDate) {
+      // Tiny helper: human delta "+45d" / "−3mo" / "+1.2y"
+      if (!origDate || !currDate) return '';
+      const diffDays = Math.round((currDate - origDate) / 86400000);
+      if (diffDays === 0) return '';
+      const sign = diffDays > 0 ? '+' : '−';
+      const abs  = Math.abs(diffDays);
+      if (abs < 7)   return `${sign}${abs}d`;
+      if (abs < 30)  return `${sign}${Math.round(abs / 7)}w`;
+      if (abs < 365) return `${sign}${Math.round(abs / 30)}mo`;
+      return `${sign}${(abs / 365.25).toFixed(1)}y`;
+    }
+
+    function showDragHUD(item) {
+      // Tiny helper: renders and positions the HUD next to the cursor
+      if (!_dragHUD) _dragHUD = _createDragHUD();
+      const start = item.start instanceof Date ? item.start : new Date(item.start);
+      const end   = item.end ? (item.end instanceof Date ? item.end : new Date(item.end)) : null;
+      const fmt   = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+      const sd    = _dragOrigin ? _fmtDelta(_dragOrigin.start, start) : '';
+      const ed    = (_dragOrigin && _dragOrigin.end && end) ? _fmtDelta(_dragOrigin.end, end) : '';
+      const dur   = end ? calcDuration(toDateStr(start), toDateStr(end)) : '—';
+      _dragHUD.innerHTML =
+        `<div class="hud-row"><span class="hud-lbl">Start</span><span class="hud-val">${fmt(start)}</span>${sd ? `<span class="hud-delta">${sd}</span>` : ''}</div>` +
+        (end ? `<div class="hud-row"><span class="hud-lbl">End</span><span class="hud-val">${fmt(end)}</span>${ed ? `<span class="hud-delta">${ed}</span>` : ''}</div>` : '') +
+        `<div class="hud-row hud-dur"><span class="hud-lbl">Duration</span><span class="hud-val">${dur}</span></div>`;
+      const hx = Math.min(_lastMouseX + 20, window.innerWidth  - 215);
+      const hy = Math.max(10, _lastMouseY - 115);
+      _dragHUD.style.left    = hx + 'px';
+      _dragHUD.style.top     = hy + 'px';
+      _dragHUD.style.display = 'block';
+    }
+
+    function hideDragHUD() {
+      // Tiny helper: hides the HUD and resets drag state
+      if (_dragHUD) _dragHUD.style.display = 'none';
+      _dragOrigin = null;
+      _dragItemId = null;
+    }
+
+    function _enterMoveMode(itemId) {
+      // Tiny helper: unlocks a single item for drag/resize; locks any previous item first
+      if (_moveItemId !== null && _moveItemId !== itemId) _exitMoveMode(false);
+      const m = state.milestones.find(x => x.id === itemId);
+      if (!m) return;
+      _moveItemId   = itemId;
+      _moveItemSnap = { target_date: m.target_date, target_year: m.target_year, end_date: m.end_date };
+      const isSub   = !!m.parent_id;
+      const cur     = visItems.get(itemId);
+      if (cur) visItems.update({
+        id:       itemId,
+        editable: { updateTime:true, updateGroup:isSub, remove:false },
+        className:(cur.className || '').replace(/\s*move-mode/g, '') + ' move-mode'
+      });
+      console.log('[_enterMoveMode] Item', itemId, 'unlocked — drag enabled');
+    }
+
+    function _exitMoveMode(revert) {
+      // Tiny helper: re-locks move-mode item; revert=true restores original position
+      if (_moveItemId === null) return;
+      const id  = _moveItemId;
+      const cur = visItems.get(id);
+      if (cur) visItems.update({
+        id:       id,
+        editable: { updateTime:false, updateGroup:false, remove:false },
+        className:(cur.className || '').replace(/\s*move-mode/g, '')
+      });
+      if (revert && _moveItemSnap) {
+        const idx = state.milestones.findIndex(x => x.id === id);
+        if (idx >= 0) { Object.assign(state.milestones[idx], _moveItemSnap); render(); }
+      }
+      _moveItemId   = null;
+      _moveItemSnap = null;
+      console.log('[_exitMoveMode]', revert ? 'reverted' : 'accepted');
+    }
+
+    function handleItemMoving(item, callback) {
+      // Called continuously during drag/resize — updates HUD, captures origin on first call
+      callback(item);
+      if (_dragItemId !== item.id) {
+        _dragItemId = item.id;
+        const m = state.milestones.find(x => x.id === item.id);
+        _dragOrigin = m ? {
+          start: new Date((m.target_date || `${m.target_year}-01-01`) + 'T12:00:00'),
+          end:   m.end_date ? new Date(m.end_date + 'T12:00:00') : null
+        } : null;
+      }
+      showDragHUD(item);
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
+
+    async function init() {
+      try {
+        const [metaRes, fullRes] = await Promise.all([
+          fetch('/api/timeline/current'), fetch('/api/timeline')
+        ]);
+        if (!metaRes.ok || !fullRes.ok) throw new Error('Failed to load timeline data');
+        const meta = await metaRes.json(), full = await fullRes.json();
+
+        state.timelineId   = meta.id;
+        state.startYear    = meta.start_year;
+        state.endYear      = meta.end_year;
+        state.milestones   = full.milestones || [];
+        state.notes        = full.notes || [];
+        state.timelineName = full.timeline.name;
+        state.timelineDesc = full.timeline.description || '';
+
+        document.getElementById('timelineName').textContent = state.timelineName;
+        document.getElementById('timelineDesc').textContent = state.timelineDesc;
+
+        visGroups = new vis.DataSet(buildGroups());
+        visItems  = new vis.DataSet(buildItems());
+
+        visTimeline = new vis.Timeline(
+          document.getElementById('timeline'),
+          visItems, visGroups, {
+            start:           new Date(state.startYear, 0, 1),
+            end:             new Date(state.endYear, 11, 31),
+            min:             new Date(state.startYear - 2, 0, 1),
+            max:             new Date(state.endYear + 10, 11, 31),
+            zoomMin:         1000 * 60 * 60 * 24 * 30,
+            zoomMax:         MS_YEAR * 70,
+            editable:        { add:false, updateTime:true, updateGroup:true, remove:false },
+            multiselect:     false,
+            groupOrder:      'order',
+            stack:           true,
+            showCurrentTime: true,
+            moveable:        true,
+            zoomable:        true,
+            orientation:     { axis:'top' },
+            onMove:          handleItemMove,
+            onMoving:        handleItemMoving,
+            snap:            null,
+            tooltip:         { followMouse:true, overflowMethod:'cap' },
+            groupHeightMode: 'fitItems',
+            margin:          { item:{ horizontal:10, vertical:5 }, axis:12 }
+          }
+        );
+
+        // Double-click item → open edit modal
+        visTimeline.on('doubleClick', props => {
+          if (props.item != null) {
+            const m = state.milestones.find(x => x.id === props.item);
+            if (m) openModal(m);
+          }
+        });
+
+        visTimeline.on('rangechanged', _updateAxisGranularity);
+
+        initCursorLine();
+        _updateAxisGranularity();
+        updateAchievedBadge();
+        renderCalendar();
+        renderNotes();
+        console.log('[init] Timeline loaded –', state.milestones.length, 'milestones,', state.notes.length, 'notes');
+      } catch (err) {
+        console.error('[init ERROR]', err);
+        document.getElementById('timeline').innerHTML =
+          `<div class="error-msg">Failed to load timeline: ${err.message}</div>`;
+      }
+    }
+
+    // ── Drag handler ───────────────────────────────────────────────────────
+
+    async function handleItemMove(item, callback) {
+      hideDragHUD();
+      const m = state.milestones.find(x => x.id === item.id);
+      if (!m) { callback(null); return; }
+
+      const isBigGoal   = !m.parent_id;
+      const wasPointGoal = !isBigGoal && !m.end_date; // sub-goal with no real end_date
+      // Big goals have updateGroup:false so group never changes.
+      // Sub-goals can move between campaign-goal groups; block the General fallback group.
+      if (!isBigGoal && item.group === 'general') { callback(null); return; }
+
+      callback(item); // accept — vis animates immediately
+
+      const newStart    = item.start instanceof Date ? item.start : new Date(item.start);
+      const newEnd      = item.end ? (item.end instanceof Date ? item.end : new Date(item.end)) : null;
+      const newParentId = isBigGoal ? null
+        : (String(item.group).startsWith('p') ? parseInt(String(item.group).replace('p','')) : null);
+
+      // For point goals: if duration ≈ 14d the user dragged (don't save fake end);
+      // if duration changed significantly the user resized (save the real end).
+      let saveEndDate = null;
+      if (newEnd) {
+        if (wasPointGoal) {
+          const durDays = (newEnd - newStart) / 86400000;
+          saveEndDate = Math.abs(durDays - 14) > 1 ? toDateStr(newEnd) : null;
+        } else {
+          saveEndDate = toDateStr(newEnd);
+        }
+      } else if (!wasPointGoal) {
+        saveEndDate = m.end_date || null;
+      }
+
+      const snap = { ...m };
+      const idx  = state.milestones.findIndex(x => x.id === item.id);
+
+      // Optimistic update — state matches what vis shows, preventing snap-back on render
+      if (idx >= 0) {
+        state.milestones[idx] = {
+          ...m,
+          target_date: toDateStr(newStart),
+          target_year: newStart.getFullYear(),
+          end_date:    saveEndDate,
+          parent_id:   newParentId
+        };
+      }
+
+      if (m.parent_id !== newParentId) _syncGroupLabels();
+
+      try {
+        const res = await fetch(`/api/milestones/${item.id}`, {
+          method:'PUT', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            target_date: toDateStr(newStart),
+            target_year: newStart.getFullYear(),
+            end_date:    saveEndDate,
+            parent_id:   newParentId
+          })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const updated = await res.json();
+        if (idx >= 0) state.milestones[idx] = updated;
+        if (isBigGoal) _syncGroupLabels();
+        console.log('[handleItemMove] Saved – milestone', item.id);
+      } catch (err) {
+        console.error('[handleItemMove ERROR]', err);
+        if (idx >= 0) state.milestones[idx] = snap;
+        render();
+      }
+    }
+
+    // ── Tab switching ──────────────────────────────────────────────────────
+
+    function setTab(tab) {
+      const isTimeline = tab === 'timeline';
+      document.getElementById('timelineView').classList.toggle('hidden', !isTimeline);
+      document.getElementById('achievedView').classList.toggle('hidden', isTimeline);
+      document.getElementById('zoomPresets').style.visibility = isTimeline ? 'visible' : 'hidden';
+      document.getElementById('tab-timeline').classList.toggle('active', isTimeline);
+      document.getElementById('tab-achieved').classList.toggle('active', !isTimeline);
+      if (!isTimeline) renderAchievedTable();
+      console.log('[setTab] Switched to', tab);
+    }
+
+    function updateAchievedBadge() {
+      // Tiny helper: updates the count badge on the Achieved tab
+      const n = state.milestones.filter(m => m.status === 'completed').length;
+      const badge = document.getElementById('achievedBadge');
+      badge.textContent  = n;
+      badge.style.display = n > 0 ? 'inline-flex' : 'none';
+    }
+
+    function renderAchievedTable() {
+      const achieved = state.milestones
+        .filter(m => m.status === 'completed')
+        .sort((a, b) => {
+          const da = a.end_date || `${a.target_year}-12-31`;
+          const db = b.end_date || `${b.target_year}-12-31`;
+          return da < db ? -1 : 1;
+        });
+
+      document.getElementById('achievedCount').textContent =
+        `${achieved.length} achieved goal${achieved.length !== 1 ? 's' : ''}`;
+
+      const empty = document.getElementById('achievedEmpty');
+      const table = document.getElementById('achievedTable');
+      const body  = document.getElementById('achievedBody');
+
+      if (achieved.length === 0) {
+        empty.style.display = 'block';
+        table.style.display = 'none';
+        return;
+      }
+      empty.style.display = 'none';
+      table.style.display = 'table';
+      body.innerHTML = '';
+
+      achieved.forEach(m => {
+        const parent   = m.parent_id ? state.milestones.find(x => x.id === m.parent_id) : null;
+        const startStr = m.target_date || `${m.target_year}-01-01`;
+        const endStr   = m.end_date || '';
+        const c        = itemColor(m);
+        const tc       = isLight(c) ? '#000' : '#fff';
+        const tr       = document.createElement('tr');
+        tr.className   = 'achieved-row';
+        tr.onclick     = () => { setTab('timeline'); openModal(m); };
+        tr.innerHTML = `
+          <td><span class="achieved-pill" style="background:${c};color:${tc}">${m.title}</span></td>
+          <td>${m.category && m.category !== 'general' ? m.category : '—'}</td>
+          <td>${formatDisplayDate(endStr || startStr)}</td>
+          <td>${endStr ? calcDuration(startStr, endStr) : '—'}</td>
+          <td>${parent ? parent.title : '—'}</td>
+          <td class="notes-cell">${m.notes ? m.notes.slice(0,80)+(m.notes.length>80?'…':'') : '—'}</td>
+        `;
+        body.appendChild(tr);
+      });
+      console.log('[renderAchievedTable] Rendered', achieved.length, 'rows');
+    }
+
+    // ── Goal type toggle ───────────────────────────────────────────────────
+
+    function setGoalType(type) {
+      const isCampaign = type === 'campaign';
+      document.getElementById('typeBtn-campaign').classList.toggle('active', isCampaign);
+      document.getElementById('typeBtn-subgoal').classList.toggle('active', !isCampaign);
+      document.getElementById('hint-campaign').classList.toggle('hidden', !isCampaign);
+      document.getElementById('hint-subgoal').classList.toggle('hidden', isCampaign);
+      document.getElementById('parentRow').style.display  = isCampaign ? 'none' : 'block';
+      document.getElementById('horizonRow').style.display = isCampaign ? 'block' : 'none';
+      document.getElementById('endDateLabel').textContent = isCampaign ? 'End Date (auto-filled)' : 'End Date';
+      if (isCampaign) {
+        const sv = document.getElementById('fStartDate').value;
+        if (sv && !document.getElementById('fEndDate').value) _autoFillEndDate(sv);
+      }
+    }
+
+    function _autoFillEndDate(startIso) {
+      const d = new Date(startIso + 'T12:00:00');
+      d.setFullYear(d.getFullYear() + (_currentHorizonYears || 5));
+      document.getElementById('fEndDate').value = toDateStr(d);
+    }
+
+    // ── Horizon selector ───────────────────────────────────────────────────
+
+    let _currentHorizonYears = 5;
+
+    function setHorizon(years) {
+      _currentHorizonYears = years;
+      document.querySelectorAll('.horizon-btn').forEach(b =>
+        b.classList.toggle('active', parseInt(b.dataset.years) === years));
+      const sv = document.getElementById('fStartDate').value;
+      if (years > 0 && sv) {
+        const d = new Date(sv + 'T12:00:00');
+        d.setFullYear(d.getFullYear() + years);
+        document.getElementById('fEndDate').value = toDateStr(d);
+      }
+      if (years === 0) document.getElementById('fEndDate').value = '';
+      _updateHorizonPreview();
+    }
+
+    function _updateHorizonPreview() {
+      const sv = document.getElementById('fStartDate').value;
+      const ev = document.getElementById('fEndDate').value;
+      const el = document.getElementById('horizonPreview');
+      if (!sv) { el.textContent = ''; return; }
+      const sy = new Date(sv+'T12:00:00').getFullYear();
+      if (ev) {
+        const ey = new Date(ev+'T12:00:00').getFullYear();
+        el.textContent = `${sy} → ${ey}  (${ey-sy} yr)`;
+      } else { el.textContent = `${sy}`; }
+    }
+
+    // ── Mini Calendar ─────────────────────────────────────────────────────
+
+    function calPrev() {
+      calState.month--;
+      if (calState.month < 0) { calState.month = 11; calState.year--; }
+      renderCalendar();
+    }
+
+    function calNext() {
+      calState.month++;
+      if (calState.month > 11) { calState.month = 0; calState.year++; }
+      renderCalendar();
+    }
+
+    function renderCalendar() {
+      const { year, month } = calState;
+      document.getElementById('calMonthLabel').textContent =
+        new Date(year, month, 1).toLocaleDateString('en-US', { month:'long', year:'numeric' });
+
+      const firstDay    = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const today       = new Date();
+      const monthStart  = new Date(year, month, 1);
+      const monthEnd    = new Date(year, month, daysInMonth, 23, 59, 59);
+
+      // Short-term: has a specific target_date in this month, OR horizon month/day,
+      // OR duration ≤ 45 days. These get day-cell dots.
+      const isShortTerm = m => {
+        const gs = m.target_date ? new Date(m.target_date + 'T00:00:00') : null;
+        const ge = m.end_date   ? new Date(m.end_date   + 'T23:59:59')  : gs;
+        const dur = (gs && ge) ? (ge - gs) / 86400000 : Infinity;
+        return (
+          (gs && gs >= monthStart && gs <= monthEnd) ||
+          m.horizon_type === 'month' || m.horizon_type === 'day' ||
+          dur <= 45
+        );
+      };
+
+      // Long-range goals overlapping the month — shown as subtle context pills only
+      const longGoals = state.milestones.filter(m => {
+        if (isShortTerm(m)) return false;
+        const gs = m.target_date ? new Date(m.target_date + 'T00:00:00') : new Date(m.target_year, 0, 1);
+        const ge = m.end_date   ? new Date(m.end_date   + 'T23:59:59')  : gs;
+        return gs <= monthEnd && ge >= monthStart;
+      });
+
+      // Build per-day map of short-term goals (keyed by day number)
+      const dayGoals = {};
+      state.milestones.filter(isShortTerm).forEach(m => {
+        if (!m.target_date) return;
+        const d = new Date(m.target_date + 'T00:00:00');
+        if (d.getFullYear() !== year || d.getMonth() !== month) return;
+        const day = d.getDate();
+        if (!dayGoals[day]) dayGoals[day] = [];
+        dayGoals[day].push(m);
+      });
+
+      const grid = document.getElementById('calGrid');
+      grid.innerHTML = '';
+
+      // Context strip — long-range goals spanning this month (one row, subtle)
+      if (longGoals.length) {
+        const ctx = document.createElement('div');
+        ctx.className = 'cal-context-row';
+        longGoals.forEach(m => {
+          const c = itemColor(m);
+          const pill = document.createElement('span');
+          pill.className = 'cal-ctx-pill';
+          pill.style.cssText = `border-left:3px solid ${c};background:${c}22`;
+          pill.textContent = m.title;
+          pill.title = m.title;
+          pill.onclick = () => openModal(m);
+          ctx.appendChild(pill);
+        });
+        grid.appendChild(ctx);
+      }
+
+      // Header row — single-letter day labels
+      const headerRow = document.createElement('div');
+      headerRow.className = 'cal-header-row';
+      ['S','M','T','W','T','F','S'].forEach(label => {
+        const h = document.createElement('div');
+        h.className   = 'cal-header-cell';
+        h.textContent = label;
+        headerRow.appendChild(h);
+      });
+      grid.appendChild(headerRow);
+
+      // Flat 7-column day grid
+      const daysGrid = document.createElement('div');
+      daysGrid.className = 'cal-days-grid';
+
+      // Leading empty cells
+      for (let i = 0; i < firstDay; i++) {
+        const e = document.createElement('div');
+        e.className = 'cal-day-cell cal-day-empty';
+        daysGrid.appendChild(e);
+      }
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+        const cell = document.createElement('div');
+        cell.className = 'cal-day-cell' + (isToday ? ' cal-today' : '');
+
+        const num = document.createElement('div');
+        num.className   = 'cal-day-num';
+        num.textContent = d;
+        cell.appendChild(num);
+
+        const goals = dayGoals[d] || [];
+        if (goals.length) {
+          const dots = document.createElement('div');
+          dots.className = 'cal-dots';
+          goals.slice(0, 3).forEach(m => {
+            const dot = document.createElement('span');
+            dot.className = 'cal-dot';
+            dot.style.background = itemColor(m);
+            dot.title = m.title;
+            dots.appendChild(dot);
+          });
+          if (goals.length > 3) {
+            const more = document.createElement('span');
+            more.className = 'cal-dot-more';
+            more.textContent = `+${goals.length - 3}`;
+            dots.appendChild(more);
+          }
+          cell.appendChild(dots);
+        }
+
+        const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        cell.onclick = () => openDayModal(iso);
+        daysGrid.appendChild(cell);
+      }
+
+      grid.appendChild(daysGrid);
+      console.log('[renderCalendar]', year, month + 1, '| days w/ goals:', Object.keys(dayGoals).length, '| bg:', longGoals.length);
+    }
+
+    // ── Notes Journal ──────────────────────────────────────────────────────
+
+    function renderNotes() {
+      const list = document.getElementById('notesList');
+      if (!list) return;
+      if (state.notes.length === 0) {
+        list.innerHTML = '<div class="notes-empty">No notes yet — add your first one above.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      [...state.notes]
+        .sort((a, b) => (a.created_at > b.created_at ? -1 : 1))
+        .forEach(n => {
+          const el = document.createElement('div');
+          el.className = 'note-entry';
+          const ts = new Date(n.created_at + (n.created_at.endsWith('Z') ? '' : 'Z'))
+            .toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+          el.innerHTML =
+            `<div class="note-ts">${ts}</div>` +
+            `<div class="note-body">${n.content.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>` +
+            `<button class="note-delete" onclick="deleteNote(${n.id})" title="Delete">×</button>`;
+          list.appendChild(el);
+        });
+      console.log('[renderNotes]', state.notes.length, 'notes');
+    }
+
+    async function addNote() {
+      const input   = document.getElementById('noteInput');
+      const content = input.value.trim();
+      if (!content) { input.focus(); return; }
+      try {
+        const res = await fetch('/api/notes', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ timeline_id: state.timelineId, content })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const note = await res.json();
+        state.notes.unshift(note);
+        input.value = '';
+        renderNotes();
+        console.log('[addNote] Created note', note.id);
+      } catch (err) { console.error('[addNote ERROR]', err); }
+    }
+
+    async function deleteNote(id) {
+      try {
+        const res = await fetch(`/api/notes/${id}`, { method:'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        state.notes = state.notes.filter(n => n.id !== id);
+        renderNotes();
+        console.log('[deleteNote] Deleted', id);
+      } catch (err) { console.error('[deleteNote ERROR]', err); }
+    }
+
+    // ── Color picker ───────────────────────────────────────────────────────
+
+    function setColor(hex) {
+      document.getElementById('fColor').value = hex;
+      document.querySelectorAll('.color-swatch').forEach(s =>
+        s.classList.toggle('selected', s.dataset.color === hex));
+    }
+
+    // ── Milestone Modal ────────────────────────────────────────────────────
+
+    // ── Day Details Modal ──────────────────────────────────────────────────
+    function openDayModal(iso) {
+      const dayDate = new Date(iso + 'T00:00:00');
+      const dayEnd  = new Date(iso + 'T23:59:59');
+
+      // All goals active on this day (any that overlap the 24-hour window)
+      const dayItems = state.milestones.filter(m => {
+        const gs = m.target_date ? new Date(m.target_date + 'T00:00:00') : new Date(m.target_year, 0, 1);
+        const ge = m.end_date   ? new Date(m.end_date   + 'T23:59:59')  : gs;
+        return gs <= dayEnd && ge >= dayDate;
+      });
+
+      document.getElementById('dayModalDate').textContent =
+        dayDate.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+      document.getElementById('dayModal').dataset.iso = iso;
+
+      const fmtD = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+
+      const list = document.getElementById('dayModalList');
+      list.innerHTML = '';
+
+      if (!dayItems.length) {
+        list.innerHTML = '<div class="day-modal-empty">No goals on this day.</div>';
+      } else {
+        dayItems.forEach(m => {
+          const c   = itemColor(m);
+          const row = document.createElement('div');
+          row.className = 'day-modal-item';
+
+          const dot = document.createElement('span');
+          dot.className   = 'day-modal-dot';
+          dot.style.background = c;
+
+          const info  = document.createElement('div');
+          info.className = 'day-modal-info';
+
+          const title = document.createElement('div');
+          title.className   = 'day-modal-item-title';
+          title.textContent = m.title;
+
+          const meta = document.createElement('div');
+          meta.className = 'day-modal-item-meta';
+          const startStr = m.target_date ? fmtD(m.target_date) : String(m.target_year);
+          const endStr   = m.end_date ? ` → ${fmtD(m.end_date)}` : '';
+          meta.textContent = `${m.category}  ·  ${startStr}${endStr}`;
+
+          info.appendChild(title);
+          info.appendChild(meta);
+          row.appendChild(dot);
+          row.appendChild(info);
+          row.onclick = () => { closeDayModal(); openModal(m); };
+          list.appendChild(row);
+        });
+      }
+
+      document.getElementById('dayModal').classList.remove('hidden');
+      console.log('[openDayModal]', iso, '|', dayItems.length, 'goals');
+    }
+
+    function closeDayModal() {
+      document.getElementById('dayModal').classList.add('hidden');
+    }
+
+    function openModal(milestone = null, defaultDate = null) {
+      const isEdit     = !!milestone;
+      const isCampaign = isEdit ? !milestone.parent_id : true;
+
+      document.getElementById('modalTitle').textContent     = isEdit ? 'Edit Goal' : 'New Goal';
+      document.getElementById('milestoneId').value          = isEdit ? milestone.id : '';
+      document.getElementById('fTitle').value               = isEdit ? milestone.title : '';
+      document.getElementById('fDesc').value                = isEdit ? (milestone.description||'') : '';
+      document.getElementById('fStartDate').value           = isEdit ? (milestone.target_date||`${milestone.target_year}-01-01`) : (defaultDate||'');
+      document.getElementById('fEndDate').value             = isEdit ? (milestone.end_date||'') : '';
+      document.getElementById('fStatus').value              = isEdit ? milestone.status : 'planned';
+      document.getElementById('fCategory').value            = isEdit ? (milestone.category||'') : '';
+      document.getElementById('fNotes').value               = isEdit ? (milestone.notes||'') : '';
+      document.getElementById('btnDelete').style.display    = isEdit ? 'inline-block' : 'none';
+
+      setColor(isEdit ? (milestone.color||'') : '');
+
+      // Horizon detect
+      if (isEdit && milestone.target_date && milestone.end_date) {
+        const diff = new Date(milestone.end_date+'T12:00:00').getFullYear()
+                   - new Date(milestone.target_date+'T12:00:00').getFullYear();
+        _currentHorizonYears = [1,5,10,15].includes(diff) ? diff : 0;
+      } else { _currentHorizonYears = 5; }
+      document.querySelectorAll('.horizon-btn').forEach(b =>
+        b.classList.toggle('active', parseInt(b.dataset.years) === _currentHorizonYears));
+
+      const hasChildren = isEdit && isParent(milestone);
+      const subBtn = document.getElementById('typeBtn-subgoal');
+      subBtn.disabled = hasChildren;
+      subBtn.title    = hasChildren ? "Can't convert: has sub-goals" : '';
+
+      const fParent = document.getElementById('fParent');
+      fParent.innerHTML = '<option value="">— choose a campaign goal —</option>';
+      bigGoals().forEach(m => {
+        if (isEdit && m.id === milestone.id) return;
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = `${m.title} (${m.target_year})`;
+        if (isEdit && milestone.parent_id === m.id) opt.selected = true;
+        fParent.appendChild(opt);
+      });
+
+      setGoalType(isCampaign ? 'campaign' : 'subgoal');
+      document.getElementById('milestoneModal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('fTitle').focus(), 50);
+    }
+
+    function closeModal() { document.getElementById('milestoneModal').classList.add('hidden'); }
+
+    async function saveModal() {
+      const id         = document.getElementById('milestoneId').value;
+      const title      = document.getElementById('fTitle').value.trim();
+      const startDate  = document.getElementById('fStartDate').value;
+      const endDate    = document.getElementById('fEndDate').value;
+      const isCampaign = document.getElementById('typeBtn-campaign').classList.contains('active');
+      const parentVal  = isCampaign ? '' : document.getElementById('fParent').value;
+
+      if (!title)                     { document.getElementById('fTitle').focus();    return; }
+      if (!startDate)                 { document.getElementById('fStartDate').focus(); return; }
+      if (!isCampaign && !parentVal)  { document.getElementById('fParent').focus();   return; }
+
+      const payload = {
+        title,
+        description:  document.getElementById('fDesc').value.trim() || null,
+        target_date:  startDate,
+        end_date:     endDate || null,
+        target_year:  new Date(startDate+'T12:00:00').getFullYear(),
+        priority:     'medium',
+        status:       document.getElementById('fStatus').value,
+        category:     document.getElementById('fCategory').value.trim() || 'general',
+        parent_id:    parentVal ? parseInt(parentVal) : null,
+        horizon_type: isCampaign ? (endDate ? '5year' : 'year') : 'year',
+        color:        document.getElementById('fColor').value || null,
+        notes:        document.getElementById('fNotes').value.trim() || null
+      };
+
+      try {
+        if (id) {
+          const res = await fetch(`/api/milestones/${id}`, {
+            method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const updated = await res.json();
+          const idx = state.milestones.findIndex(m => m.id === parseInt(id));
+          if (idx >= 0) state.milestones[idx] = updated;
+          console.log('[saveModal] Updated', id);
+        } else {
+          payload.timeline_id = state.timelineId;
+          const res = await fetch('/api/milestones', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          state.milestones.push(await res.json());
+          console.log('[saveModal] Created');
+        }
+        closeModal();
+        render();
+        renderCalendar();
+      } catch (err) {
+        console.error('[saveModal ERROR]', err);
+        alert('Save failed: ' + err.message);
+      }
+    }
+
+    async function deleteCurrentMilestone() {
+      const id = document.getElementById('milestoneId').value;
+      if (!id || !confirm('Delete this goal? Sub-goals will be detached.')) return;
+      try {
+        const res = await fetch(`/api/milestones/${id}`, { method:'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        state.milestones = state.milestones.filter(m => m.id !== parseInt(id));
+        state.milestones.forEach(m => { if (m.parent_id === parseInt(id)) m.parent_id = null; });
+        closeModal();
+        render();
+        renderCalendar();
+        console.log('[deleteCurrentMilestone] Deleted', id);
+      } catch (err) {
+        console.error('[deleteCurrentMilestone ERROR]', err);
+        alert('Delete failed: ' + err.message);
+      }
+    }
+
+    // ── Settings Modal ─────────────────────────────────────────────────────
+
+    function openSettings() {
+      document.getElementById('sName').value      = state.timelineName;
+      document.getElementById('sDesc').value      = state.timelineDesc;
+      document.getElementById('sStartYear').value = state.startYear;
+      document.getElementById('sEndYear').value   = state.endYear;
+      document.getElementById('settingsModal').classList.remove('hidden');
+    }
+
+    function closeSettings() { document.getElementById('settingsModal').classList.add('hidden'); }
+
+    async function saveSettings() {
+      const payload = {
+        name:        document.getElementById('sName').value.trim(),
+        description: document.getElementById('sDesc').value.trim(),
+        start_year:  parseInt(document.getElementById('sStartYear').value),
+        end_year:    parseInt(document.getElementById('sEndYear').value)
+      };
+      if (!payload.name || isNaN(payload.start_year) || isNaN(payload.end_year)) return;
+      if (payload.end_year <= payload.start_year) { alert('End year must be after start year.'); return; }
+      try {
+        const res = await fetch('/api/timeline', {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        state.timelineName = payload.name;
+        state.timelineDesc = payload.description;
+        state.startYear    = payload.start_year;
+        state.endYear      = payload.end_year;
+        document.getElementById('timelineName').textContent = state.timelineName;
+        document.getElementById('timelineDesc').textContent = state.timelineDesc;
+        visTimeline.setOptions({ min:new Date(state.startYear-2,0,1), max:new Date(state.endYear+10,11,31) });
+        visTimeline.setWindow(new Date(state.startYear,0,1), new Date(state.endYear,11,31));
+        closeSettings();
+      } catch (err) {
+        console.error('[saveSettings ERROR]', err);
+        alert('Save failed: ' + err.message);
+      }
+    }
+
+    // ── Listeners & Boot ───────────────────────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('fStartDate').addEventListener('change', function () {
+        const isCampaign = document.getElementById('typeBtn-campaign').classList.contains('active');
+        if (isCampaign && _currentHorizonYears > 0 && this.value) {
+          const d = new Date(this.value+'T12:00:00');
+          d.setFullYear(d.getFullYear() + _currentHorizonYears);
+          document.getElementById('fEndDate').value = toDateStr(d);
+        }
+        _updateHorizonPreview();
+      });
+      document.getElementById('fEndDate').addEventListener('change', _updateHorizonPreview);
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { closeModal(); closeSettings(); closeDayModal(); }
+      if ((e.metaKey||e.ctrlKey) && e.key === 'Enter') {
+        if (!document.getElementById('milestoneModal').classList.contains('hidden')) saveModal();
+        if (!document.getElementById('settingsModal').classList.contains('hidden')) saveSettings();
+      }
+    });
+
+    document.addEventListener('mouseup', hideDragHUD);
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
