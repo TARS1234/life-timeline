@@ -1,18 +1,39 @@
+import os
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from sqlmodel import Session, select
+
+from .auth import require_api_key, API_KEY
 from .db import init_db, get_session
 from .models import Timeline, Milestone, TimelineNote
 from .schemas import MilestoneCreate, MilestoneUpdate, TimelineUpdate, NoteCreate
 
-app = FastAPI(title="Life Timeline")
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+
+app = FastAPI(
+    title="Life Timeline",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
 
 @app.on_event("startup")
 def on_startup():
@@ -28,16 +49,22 @@ def on_startup():
             ))
             session.commit()
 
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, session: Session = Depends(get_session)):
     timeline = session.exec(select(Timeline)).first()
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "timeline": timeline
+        "timeline": timeline,
+        "api_key": API_KEY,
     })
 
-@app.get("/api/timeline")
-def get_timeline_data(session: Session = Depends(get_session)):
+
+# ── Timeline ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/timeline", dependencies=[Depends(require_api_key)])
+@limiter.limit("60/minute")
+def get_timeline_data(request: Request, session: Session = Depends(get_session)):
     timeline = session.exec(select(Timeline)).first()
     if not timeline:
         raise HTTPException(status_code=404, detail="Timeline not found")
@@ -53,9 +80,10 @@ def get_timeline_data(session: Session = Depends(get_session)):
         "notes": notes
     }
 
-@app.get("/api/timeline/current")
-def get_current_timeline(session: Session = Depends(get_session)):
-    """Get current timeline metadata for ID reference"""
+
+@app.get("/api/timeline/current", dependencies=[Depends(require_api_key)])
+@limiter.limit("60/minute")
+def get_current_timeline(request: Request, session: Session = Depends(get_session)):
     timeline = session.exec(select(Timeline)).first()
     if not timeline:
         raise HTTPException(status_code=404, detail="Timeline not found")
@@ -63,11 +91,13 @@ def get_current_timeline(session: Session = Depends(get_session)):
         "id": timeline.id,
         "name": timeline.name,
         "start_year": timeline.start_year,
-        "end_year": timeline.end_year
+        "end_year": timeline.end_year,
     }
 
-@app.put("/api/timeline")
-def update_timeline(payload: TimelineUpdate, session: Session = Depends(get_session)):
+
+@app.put("/api/timeline", dependencies=[Depends(require_api_key)])
+@limiter.limit("30/minute")
+def update_timeline(request: Request, payload: TimelineUpdate, session: Session = Depends(get_session)):
     timeline = session.exec(select(Timeline)).first()
     if not timeline:
         raise HTTPException(status_code=404, detail="Timeline not found")
@@ -80,16 +110,21 @@ def update_timeline(payload: TimelineUpdate, session: Session = Depends(get_sess
     return timeline
 
 
-@app.post("/api/notes")
-def create_note(payload: NoteCreate, session: Session = Depends(get_session)):
+# ── Notes ─────────────────────────────────────────────────────────────────────
+
+@app.post("/api/notes", dependencies=[Depends(require_api_key)])
+@limiter.limit("30/minute")
+def create_note(request: Request, payload: NoteCreate, session: Session = Depends(get_session)):
     note = TimelineNote(timeline_id=payload.timeline_id, content=payload.content)
     session.add(note)
     session.commit()
     session.refresh(note)
     return note
 
-@app.delete("/api/notes/{note_id}")
-def delete_note(note_id: int, session: Session = Depends(get_session)):
+
+@app.delete("/api/notes/{note_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("30/minute")
+def delete_note(request: Request, note_id: int, session: Session = Depends(get_session)):
     note = session.get(TimelineNote, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
@@ -98,21 +133,24 @@ def delete_note(note_id: int, session: Session = Depends(get_session)):
     return {"ok": True}
 
 
-@app.post("/api/milestones")
-def create_milestone(payload: MilestoneCreate, session: Session = Depends(get_session)):
-    # Validate timeline exists
+# ── Milestones ────────────────────────────────────────────────────────────────
+
+@app.post("/api/milestones", dependencies=[Depends(require_api_key)])
+@limiter.limit("30/minute")
+def create_milestone(request: Request, payload: MilestoneCreate, session: Session = Depends(get_session)):
     timeline = session.get(Timeline, payload.timeline_id)
     if not timeline:
         raise HTTPException(status_code=404, detail="Timeline not found")
-    
     milestone = Milestone(**payload.model_dump())
     session.add(milestone)
     session.commit()
     session.refresh(milestone)
     return milestone
 
-@app.put("/api/milestones/{milestone_id}")
-def update_milestone(milestone_id: int, payload: MilestoneUpdate, session: Session = Depends(get_session)):
+
+@app.put("/api/milestones/{milestone_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("30/minute")
+def update_milestone(request: Request, milestone_id: int, payload: MilestoneUpdate, session: Session = Depends(get_session)):
     milestone = session.get(Milestone, milestone_id)
     if not milestone:
         raise HTTPException(status_code=404, detail="Milestone not found")
@@ -125,8 +163,10 @@ def update_milestone(milestone_id: int, payload: MilestoneUpdate, session: Sessi
     session.refresh(milestone)
     return milestone
 
-@app.delete("/api/milestones/{milestone_id}")
-def delete_milestone(milestone_id: int, session: Session = Depends(get_session)):
+
+@app.delete("/api/milestones/{milestone_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("30/minute")
+def delete_milestone(request: Request, milestone_id: int, session: Session = Depends(get_session)):
     milestone = session.get(Milestone, milestone_id)
     if not milestone:
         raise HTTPException(status_code=404, detail="Milestone not found")

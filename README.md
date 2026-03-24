@@ -54,8 +54,13 @@ pip install -r requirements.txt
 # 4. Create the data directory
 mkdir -p data
 
-# 5. Run the app
-uvicorn app.main:app --reload
+# 5. Set your API key
+cp .env.example .env
+# Edit .env and set TIMELINE_API_KEY to a strong secret:
+#   python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# 6. Run the app
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Open [http://localhost:8000](http://localhost:8000) in your browser.
@@ -70,8 +75,9 @@ The database is created automatically on first run at `data/timeline.db`. No mig
 life-timeline/
 ├── app/
 │   ├── main.py          # FastAPI app, all API routes
+│   ├── auth.py          # API key dependency
 │   ├── models.py        # SQLModel table definitions (Timeline, Milestone, TimelineNote)
-│   ├── schemas.py       # Request/response schemas
+│   ├── schemas.py       # Request/response schemas with validation
 │   ├── db.py            # DB init + auto-migration helper
 │   ├── templates/
 │   │   └── index.html   # Single-page frontend (vis-timeline + all JS)
@@ -79,8 +85,29 @@ life-timeline/
 │       └── style.css    # Dark theme styles
 ├── data/
 │   └── timeline.db      # SQLite database (auto-created, not committed)
+├── .env                 # Your secrets (not committed)
+├── .env.example         # Template for required env vars
 ├── requirements.txt
 └── README.md
+```
+
+---
+
+## Security
+
+All API routes (`/api/*`) require an `X-API-Key` header. Set `TIMELINE_API_KEY` in `.env` before running.
+
+- **API key auth** — timing-safe comparison on every request
+- **Rate limiting** — 60 req/min (reads), 30 req/min (writes) per IP via `slowapi`
+- **Input validation** — field length limits and hex color format enforced on all inputs
+- **Docs disabled** — `/docs`, `/redoc`, and `/openapi.json` are not exposed
+
+The browser UI automatically includes the key for all API calls (injected server-side).
+
+### Generating a key
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 ---
@@ -129,11 +156,12 @@ Click the **⚙** button in the header to change the timeline name, description,
 
 ## API
 
-The backend exposes a small REST API (also browsable at [http://localhost:8000/docs](http://localhost:8000/docs)):
+All endpoints require the `X-API-Key` header.
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/timeline` | Full timeline data (milestones + notes) |
+| GET | `/api/timeline/current` | Timeline metadata (id, name, years) |
 | PUT | `/api/timeline` | Update timeline settings |
 | POST | `/api/milestones` | Create a milestone |
 | PUT | `/api/milestones/{id}` | Update a milestone |
@@ -141,11 +169,28 @@ The backend exposes a small REST API (also browsable at [http://localhost:8000/d
 | POST | `/api/notes` | Add a note |
 | DELETE | `/api/notes/{id}` | Delete a note |
 
+### Example (curl)
+
+```bash
+curl -H "X-API-Key: your-key-here" http://your-server:8000/api/timeline
+```
+
+### Example (Python agent)
+
+```python
+import httpx
+
+BASE = "http://your-server:8000"
+HEADERS = {"X-API-Key": "your-key-here"}
+
+data = httpx.get(f"{BASE}/api/timeline", headers=HEADERS).json()
+```
+
 ---
 
 ## Data & privacy
 
-All data is stored locally in `data/timeline.db` (SQLite). Nothing is sent to any server. Add `data/` to your `.gitignore` if you want to keep your personal timeline out of version control.
+All data is stored locally in `data/timeline.db` (SQLite). Nothing is sent to any external server. The `data/` directory and `.env` file are excluded from version control via `.gitignore`.
 
 ---
 

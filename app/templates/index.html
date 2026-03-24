@@ -236,6 +236,12 @@
 
   <script src="https://unpkg.com/vis-timeline@7.7.3/standalone/umd/vis-timeline-graph2d.min.js"></script>
   <script>
+    // ── API auth ───────────────────────────────────────────────────────────
+    const API_KEY = '{{ api_key }}';
+    function apiHeaders(extra = {}) {
+      return { 'Content-Type': 'application/json', 'X-API-Key': API_KEY, ...extra };
+    }
+
     // ── State ──────────────────────────────────────────────────────────────
     const state = {
       timelineId: null, milestones: [], notes: [],
@@ -610,7 +616,8 @@
     async function init() {
       try {
         const [metaRes, fullRes] = await Promise.all([
-          fetch('/api/timeline/current'), fetch('/api/timeline')
+          fetch('/api/timeline/current', { headers: apiHeaders() }),
+          fetch('/api/timeline', { headers: apiHeaders() })
         ]);
         if (!metaRes.ok || !fullRes.ok) throw new Error('Failed to load timeline data');
         const meta = await metaRes.json(), full = await fullRes.json();
@@ -730,7 +737,7 @@
 
       try {
         const res = await fetch(`/api/milestones/${item.id}`, {
-          method:'PUT', headers:{'Content-Type':'application/json'},
+          method:'PUT', headers: apiHeaders(),
           body: JSON.stringify({
             target_date: toDateStr(newStart),
             target_year: newStart.getFullYear(),
@@ -1041,7 +1048,7 @@
       if (!content) { input.focus(); return; }
       try {
         const res = await fetch('/api/notes', {
-          method:'POST', headers:{'Content-Type':'application/json'},
+          method:'POST', headers: apiHeaders(),
           body: JSON.stringify({ timeline_id: state.timelineId, content })
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1055,7 +1062,7 @@
 
     async function deleteNote(id) {
       try {
-        const res = await fetch(`/api/notes/${id}`, { method:'DELETE' });
+        const res = await fetch(`/api/notes/${id}`, { method:'DELETE', headers: apiHeaders() });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         state.notes = state.notes.filter(n => n.id !== id);
         renderNotes();
@@ -1215,7 +1222,7 @@
       try {
         if (id) {
           const res = await fetch(`/api/milestones/${id}`, {
-            method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+            method:'PUT', headers: apiHeaders(), body:JSON.stringify(payload)
           });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const updated = await res.json();
@@ -1225,7 +1232,7 @@
         } else {
           payload.timeline_id = state.timelineId;
           const res = await fetch('/api/milestones', {
-            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+            method:'POST', headers: apiHeaders(), body:JSON.stringify(payload)
           });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           state.milestones.push(await res.json());
@@ -1244,7 +1251,7 @@
       const id = document.getElementById('milestoneId').value;
       if (!id || !confirm('Delete this goal? Sub-goals will be detached.')) return;
       try {
-        const res = await fetch(`/api/milestones/${id}`, { method:'DELETE' });
+        const res = await fetch(`/api/milestones/${id}`, { method:'DELETE', headers: apiHeaders() });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         state.milestones = state.milestones.filter(m => m.id !== parseInt(id));
         state.milestones.forEach(m => { if (m.parent_id === parseInt(id)) m.parent_id = null; });
@@ -1281,7 +1288,7 @@
       if (payload.end_year <= payload.start_year) { alert('End year must be after start year.'); return; }
       try {
         const res = await fetch('/api/timeline', {
-          method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+          method:'PUT', headers: apiHeaders(), body:JSON.stringify(payload)
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         state.timelineName = payload.name;

@@ -47,7 +47,7 @@ CRITICAL REMINDERS:
 
 # ==========================================================================
 #  Tiny Helper Template
-#  Used for adding small, specialized functions in TowMate_AI
+#  Used for adding small, specialized functions
 #  IMPORTANT: Always include a signal/log for debugging when failures occur
 # ==============================================================================================================
 
